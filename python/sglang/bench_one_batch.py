@@ -122,7 +122,6 @@ def load_model(server_args, port_args, tp_rank):
     model_runner = ModelRunner(
         model_config=model_config,
         mem_fraction_static=server_args.mem_fraction_static,
-        gpu_id=tp_rank,
         tp_rank=tp_rank,
         tp_size=server_args.tp_size,
         nccl_port=port_args.nccl_port,
@@ -437,6 +436,7 @@ def main(server_args, bench_args):
     else:
         workers = []
         for tp_rank in range(server_args.tp_size):
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(tp_rank)
             proc = multiprocessing.Process(
                 target=work_func,
                 args=(
