@@ -24,11 +24,13 @@ import sys
 import threading
 import time
 import uuid
+from concurrent import futures
 from datetime import datetime
 from http import HTTPStatus
 from typing import Any, Awaitable, Dict, Generic, List, Optional, Tuple, TypeVar, Union
 
 import fastapi
+import grpc
 import uvloop
 import zmq
 import zmq.asyncio
@@ -36,6 +38,7 @@ from fastapi import BackgroundTasks
 
 from sglang.srt.aio_rwlock import RWLock
 from sglang.srt.configs.model_config import ModelConfig
+from sglang.srt.entrypoints.grpc_server import CompletionServicer
 from sglang.srt.hf_transformers_utils import get_processor, get_tokenizer
 from sglang.srt.managers.image_processor import (
     get_dummy_image_processor,
@@ -73,6 +76,7 @@ from sglang.srt.managers.io_struct import (
     UpdateWeightsFromTensorReqOutput,
 )
 from sglang.srt.metrics.collector import TokenizerMetricsCollector
+from sglang.srt.proto import completion_pb2_grpc
 from sglang.srt.sampling.sampling_params import SamplingParams
 from sglang.srt.server_args import PortArgs, ServerArgs
 from sglang.srt.utils import (
@@ -261,6 +265,16 @@ class TokenizerManager:
                 ),
             ]
         )
+        if server_args.grpc_port:
+            t = threading.Thread(
+                target=self._launch_grpc_server_in_loop,
+                name="gRPCServerThread",
+                daemon=True,
+            )
+            t.start()
+            logger.info(
+                f"TokenizerManager: launched gRPC server thread on port {server_args.grpc_port}"
+            )
 
     async def generate_request(
         self,
@@ -757,7 +771,6 @@ class TokenizerManager:
 
     async def handle_loop(self):
         """The event loop that handles requests"""
-
         while True:
             recv_obj = await self.recv_from_detokenizer.recv_pyobj()
             self._result_dispatcher(recv_obj)
@@ -957,6 +970,36 @@ class TokenizerManager:
             # set future if the all results are recevied
             if len(self.model_update_tmp) == self.server_args.dp_size:
                 self.model_update_result.set_result(self.model_update_tmp)
+
+    def _launch_grpc_server_in_loop(self):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        server = loop.run_until_complete(self._create_grpc_server())
+        # Start the server before run_forever()
+        loop.run_until_complete(server.start())
+
+        logger.info(
+            f"gRPC server started, listening on {self.server_args.host}:{self.server_args.grpc_port}"
+        )
+        # Keep this loop alive so the server remains accessible
+        loop.run_forever()
+
+    async def _create_grpc_server(self):
+        # Create the server
+        server = grpc.aio.server(
+            options=[
+                ("grpc.max_send_message_length", 100 * 1024 * 1024),
+                ("grpc.max_receive_message_length", 100 * 1024 * 1024),
+            ]
+        )
+        completion_pb2_grpc.add_CompletionServiceServicer_to_server(
+            CompletionServicer(self.generate_request), server
+        )
+
+        server.add_insecure_port(
+            f"{self.server_args.host}:{self.server_args.grpc_port}"
+        )
+        return server
 
 
 async def print_exception_wrapper(func):
