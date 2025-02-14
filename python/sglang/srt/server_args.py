@@ -126,6 +126,8 @@ class ServerArgs:
     speculative_num_steps: int = 5
     speculative_num_draft_tokens: int = 64
     speculative_eagle_topk: int = 8
+    speculative_lookahead_path: str = None
+    speculative_one_branch: bool = False
 
     # Double Sparsity
     enable_double_sparsity: bool = False
@@ -270,6 +272,18 @@ class ServerArgs:
             self.chunked_prefill_size = -1
             logger.info(
                 "The radix cache, chunked prefill, and overlap scheduler are disabled because of using eagle speculative decoding."
+            )
+
+        if self.speculative_algorithm == "LOOKAHEAD":
+            self.disable_overlap_schedule = True
+            self.chunked_prefill_size = -1
+            self.disable_mla = True
+            self.enable_double_sparsity = False
+            assert (
+                self.attention_backend == "flashinfer"
+            ), "Lookahead speculative decoding only support flashinfer for now."
+            logger.info(
+                "The mla, chunked_prefill, overlap scheduler and double_sparsity are disabled because of lookahead speculative decoding."
             )
 
         # GGUF
@@ -705,13 +719,19 @@ class ServerArgs:
         parser.add_argument(
             "--speculative-algorithm",
             type=str,
-            choices=["EAGLE"],
+            choices=["EAGLE", "LOOKAHEAD"],
             help="Speculative algorithm.",
         )
         parser.add_argument(
             "--speculative-draft-model-path",
             type=str,
             help="The path of the draft model weights. This can be a local folder or a Hugging Face repo ID.",
+        )
+        parser.add_argument(
+            "--speculative-lookahead-path",
+            type=str,
+            help="The path of the lookahead. If provided, the lookahead will be inited from this path. You can `lookahead_cache.save_mem('lookahrad.pkl')` to save the lookahead for later use.",
+            required=False,
         )
         parser.add_argument(
             "--speculative-num-steps",
@@ -731,6 +751,11 @@ class ServerArgs:
             help="The number of token sampled from draft model in eagle2 each step.",
             choices=[1, 2, 4, 8],
             default=ServerArgs.speculative_eagle_topk,
+        )
+        parser.add_argument(
+            "--speculative-one-branch",
+            action="store_true",
+            help="Whether to use one branch in Lookahead Speculative Decoding.",
         )
 
         # Double Sparsity
