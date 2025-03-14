@@ -128,6 +128,7 @@ class EPMoE(torch.nn.Module):
         correction_bias: Optional[torch.Tensor] = None,
         custom_routing_function: Optional[Callable] = None,
         activation: str = "silu",
+        scoring_func: str = "softmax",
     ):
         super().__init__()
 
