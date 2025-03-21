@@ -1,4 +1,15 @@
+"""
+    Bench the huggingface vLM with benchmark MMMU
+
+    Usage:
+        python benchmark/mmmu/bench_hf.py --model-path Qwen/Qwen2-VL-7B-Instruct --dataset-path
+
+    The eval output will be logged
+"""
+
 import argparse
+import random
+import re
 
 import torch
 from data_utils import save_json
@@ -6,68 +17,32 @@ from eval_utils import (
     EvalArgs,
     eval_result,
     get_sampling_params,
+    load_model,
     prepare_samples,
     process_result,
 )
+from Qwen2VLchat import Qwen2VLchat
 from tqdm import tqdm
-from transformers import AutoModelForImageTextToText, AutoProcessor, GenerationConfig
 
 
 @torch.no_grad()
 def eval_mmmu(args):
     eval_args = EvalArgs.from_cli_args(args)
-
-    model = AutoModelForImageTextToText.from_pretrained(
-        args.model_path,
-        torch_dtype="auto",
-        trust_remote_code=True,
-    )
-    model = model.eval().cuda()
-
-    processor = AutoProcessor.from_pretrained(
-        args.model_path, torch_dtype="auto", device_map="auto"
-    )
-
+    model = load_model(args.model_path)
+    model.build_model()
     samples = prepare_samples(eval_args)
     out_samples = dict()
-
-    sampling_params = get_sampling_params(eval_args)
-    generation_config = GenerationConfig(
-        max_new_tokens=sampling_params["max_new_tokens"],
-        do_sample=False,
-    )
-
     answer_dict = {}
     for sample in tqdm(samples):
-        prompt = sample["final_input_prompt"]
-        image = sample["image"]
-        prefix = prompt.split("<")[0]
-        suffix = prompt.split(">")[1]
-        assert image is not None
-        contents = []
-        if prefix:
-            contents += [{"type": "text", "text": prefix}]
-        contents += [
-            {
-                "type": "image",
-                "image": sample["image_path"],
-            }
-        ]
-        if suffix:
-            contents += [{"type": "text", "text": suffix}]
-        messages = [{"role": "user", "content": contents}]
-        model_inputs = processor.apply_chat_template(
-            messages,
-            tokenize=True,
-            return_dict=True,
-            add_generation_prompt=True,
-            return_tensors="pt",
-        ).to(model.device)
-        input_len = model_inputs["input_ids"].shape[-1]
-        generation = model.generate(**model_inputs, generation_config=generation_config)
-        generation = generation[0][input_len:]
-        response = processor.decode(generation, skip_special_tokens=True)
-        print(f"response: {response}")
+        image = sample["image_1"]
+        if image is not None:
+            response = model.chat(sample)
+        else:  # multiple images actually
+            if sample["question_type"] == "multiple-choice":
+                all_choices = sample["all_choices"]
+                response = random.choice(all_choices)
+            else:
+                response = "INVALID GENERATION FOR MULTIPLE IMAGE INPUTS"
         process_result(response, sample, answer_dict, out_samples)
 
     args.output_path = f"{args.model_path}_val_hf.json"

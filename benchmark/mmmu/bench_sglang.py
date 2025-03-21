@@ -2,85 +2,82 @@
     Bench the sglang-hosted vLM with benchmark MMMU
 
     Usage:
-        python benchmark/mmmu/bench_sglang.py --model-path Qwen/Qwen2-VL-7B-Instruct --chat-template qwen2-vl
+        python benchmark/mmmu/bench_sglang.py --model-path Qwen/Qwen2-VL-7B-Instruct --chat-template qwen2-vl --dataset-path
 
     The eval output will be logged
 """
 
 import argparse
+import base64
+import dataclasses
+import random
+from io import BytesIO
 
-import openai
 from data_utils import save_json
 from eval_utils import (
     EvalArgs,
     eval_result,
     get_sampling_params,
+    load_model,
     prepare_samples,
     process_result,
 )
 from tqdm import tqdm
 
-from sglang.test.test_utils import add_common_sglang_args_and_parse
+from sglang import Engine
+from sglang.srt.conversation import generate_chat_conv
+from sglang.srt.openai_api.protocol import ChatCompletionRequest
+from sglang.srt.server_args import ServerArgs
 
 
 def eval_mmmu(args):
+    server_args = ServerArgs.from_cli_args(args)
     eval_args = EvalArgs.from_cli_args(args)
 
+    if server_args.chat_template is None:
+        raise ValueError("Chat template must be provided for this benchmark")
+    model = load_model(args.model_path)
+    backend = Engine(**dataclasses.asdict(server_args))
     out_samples = dict()
-
-    sampling_params = get_sampling_params(eval_args)
-
     samples = prepare_samples(eval_args)
 
     answer_dict = {}
 
-    # had to use an openai server, since SglImage doesn't support image data
-    client = openai.Client(api_key="sk", base_url=f"http://127.0.0.1:{args.port}/v1")
+    for sample in tqdm(samples):
+        image = sample["image_1"]
+        if image is not None:
+            request_dict = model.build_prompt_sglang(sample)
+            conv = generate_chat_conv(
+                ChatCompletionRequest(**request_dict),
+                template_name=server_args.chat_template,
+            )
+            prompt = conv.get_prompt()
+            print(f"\033[31m{prompt}\033[0m")
+            gen_out = backend.generate(
+                prompt=prompt,
+                image_data=conv.image_data,
+                sampling_params=model.sampling_params,
+            )["text"]
+            response = gen_out
+            print(f"\033[32m{response}\033[0m")
+        else:  # multiple images actually
+            if sample["question_type"] == "multiple-choice":
+                all_choices = sample["all_choices"]
+                response = random.choice(all_choices)
+            else:
+                response = "INVALID GENERATION FOR MULTIPLE IMAGE INPUTS"
 
-    for i, sample in enumerate(tqdm(samples)):
-        prompt = sample["final_input_prompt"]
-        prefix = prompt.split("<")[0]
-        suffix = prompt.split(">")[1]
-        image = sample["image"]
-        assert image is not None
-        image_path = sample["image_path"]
-        # TODO: batch
-        response = client.chat.completions.create(
-            model="default",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": prefix,
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": image_path},
-                        },
-                        {
-                            "type": "text",
-                            "text": suffix,
-                        },
-                    ],
-                }
-            ],
-            temperature=0,
-            max_completion_tokens=sampling_params["max_new_tokens"],
-            max_tokens=sampling_params["max_new_tokens"],
-        )
-        response = response.choices[0].message.content
         process_result(response, sample, answer_dict, out_samples)
-
-    args.output_path = f"./val_sglang.json"
+    args.output_path = f"{args.model_path}_val_sglang.json"
     save_json(args.output_path, out_samples)
     eval_result(model_answer_path=args.output_path, answer_dict=answer_dict)
+
+    backend.shutdown()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    args = add_common_sglang_args_and_parse(parser)
+    ServerArgs.add_cli_args(parser)
     EvalArgs.add_cli_args(parser)
     args = parser.parse_args()
 

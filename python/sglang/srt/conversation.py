@@ -16,6 +16,7 @@
 # Adapted from
 # https://github.com/lm-sys/FastChat/blob/main/fastchat/conversation.py
 import dataclasses
+import re
 from enum import IntEnum, auto
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -47,6 +48,7 @@ class SeparatorStyle(IntEnum):
     DeepSeekVL2 = auto()
     QWEN2_VL_EMBED = auto()
     GEMMA3 = auto()
+    MPT = auto()
 
 
 @dataclasses.dataclass
@@ -311,7 +313,31 @@ class Conversation:
                 else:
                     ret += role
             return ret
-
+        elif self.sep_style == SeparatorStyle.MPT:
+            ret = system_prompt + self.sep
+            for role, message in self.messages:
+                if message:
+                    if type(message) is tuple:
+                        message, _, _ = message
+                    if "user" in role:
+                        if len(self.modalities) > 1:
+                            image_section = "\n".join(
+                                [
+                                    f"Image-{i+1}: <image>"
+                                    for i in range(len(self.modalities))
+                                ]
+                            )
+                            message = re.sub(
+                                r"<image>", "", message, count=len(self.modalities)
+                            ).strip()
+                            message = f"{image_section}\n{message}"
+                        else:
+                            message = message.replace("<image>", "", 1).strip()
+                            message = f"<image>\n{message}"
+                    ret += role + message + self.sep
+                else:
+                    ret += role
+            return ret
         else:
             raise ValueError(f"Invalid style: {self.sep_style}")
 
@@ -702,5 +728,17 @@ register_conv_template(
         sep_style=SeparatorStyle.ADD_COLON_TWO,
         stop_str=["<|User|>", "<｜end▁of▁sentence｜>"],
         image_token="<image_placeholder>",
+    )
+)
+# Reference: https://huggingface.co/OpenGVLab/InternVL2_5-38B#inference-with-transformers
+register_conv_template(
+    Conversation(
+        name="internvl2_5",
+        system_template="<|im_start|>system\n{system_message}",
+        system_message="你是书生·万象，英文名是InternVL，是由上海人工智能实验室、清华大学及多家合作单位联合开发的多模态大语言模型。",
+        roles=("<|im_start|>user\n", "<|im_start|>assistant\n"),
+        sep_style=SeparatorStyle.MPT,
+        sep="<|im_end|>\n",
+        stop_str=["<|im_end|>", "<|action_end|>"],
     )
 )
