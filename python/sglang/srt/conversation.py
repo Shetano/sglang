@@ -46,6 +46,7 @@ class SeparatorStyle(IntEnum):
     METAMATH = auto()
     DeepSeekVL2 = auto()
     QWEN2_VL_EMBED = auto()
+    MPT = auto()
     GEMMA3 = auto()
 
 
@@ -288,6 +289,16 @@ class Conversation:
                 else:
                     ret += role + ":"
             return ret
+        elif self.sep_style == SeparatorStyle.MPT:
+            ret = system_prompt + self.sep
+            for role, message in self.messages:
+                if message:
+                    if type(message) is tuple:
+                        message, _, _ = message
+                    ret += role + message + self.sep
+                else:
+                    ret += role
+            return ret
         elif self.sep_style == SeparatorStyle.DeepSeekVL2:
             seps = [self.sep, self.sep2]
             if system_prompt == "" or system_prompt is None:
@@ -495,7 +506,7 @@ def generate_chat_conv(
                 else:
                     image_token = (
                         conv.image_token + "\n"
-                        if conv.name != "qwen2-vl"
+                        if conv.name != "qwen2-vl" and conv.name != 'internvl2_5'
                         else conv.image_token
                     )
                 for content in message.content:
@@ -504,7 +515,7 @@ def generate_chat_conv(
                             real_content += "\n"  # for video
                         real_content += content.text
                     elif content.type == "image_url":
-                        # NOTE: Only works for llava
+                        # NOTE: works for llava and intervl2_5
                         real_content += image_token
                         conv.append_image(content.image_url.url)
                 conv.append_message(conv.roles[0], real_content)
@@ -616,6 +627,19 @@ register_conv_template(
         stop_str=["<|im_end|>", "<|action_end|>"],
     )
 )
+
+register_conv_template(
+    Conversation(
+        name="internvl2_5",
+        system_template="<|im_start|>system\n{system_message}",
+        system_message="你是书生·万象，英文名是InternVL，是由上海人工智能实验室、清华大学及多家合作单位联合开发的多模态大语言模型。",
+        roles=("<|im_start|>user\n", "<|im_start|>assistant\n"),
+        sep_style=SeparatorStyle.MPT,
+        sep="<|im_end|>\n",
+        stop_str=["<|im_end|>", "<|action_end|>"],
+    )
+)
+
 
 # Reference: https://huggingface.co/docs/transformers/main/model_doc/qwen2_vl#usage-example
 register_conv_template(

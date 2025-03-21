@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from abc import abstractmethod
+
 # Copyright 2023-2024 SGLang Team
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,7 +34,7 @@ ScheduleBatch -> ModelWorkerBatch -> ForwardBatch
 import copy
 import dataclasses
 import logging
-from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Callable, List, Optional, Set, Tuple, Union
 
 import numpy as np
 import torch
@@ -246,6 +248,25 @@ class ImageInputs:
         for arg in optional_args:
             if getattr(self, arg, None) is not None:
                 setattr(self, arg, getattr(self, arg) + getattr(other, arg))
+
+    def pad_media_tokens(self, input_ids: List[int]) -> List[int]:
+        """
+        Pad media tokens (image/audio) in input_ids with special values.
+
+        Args:
+            input_ids: List of token ids containing media tokens
+
+        Returns:
+            List of token ids with media tokens replaced by padding values
+        """
+        if self.media_padding_helper is None:
+            return input_ids
+        return self.media_padding_helper.pad_input_tokens(
+            input_ids=input_ids, image_inputs=self
+        )
+
+    def image_count(self) -> int:
+        return self.pixel_values.shape[0]
 
 
 class Req:
