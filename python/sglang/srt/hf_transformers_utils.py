@@ -39,6 +39,7 @@ from sglang.srt.configs import (
     Gemma3TextConfig,
     MultiModalityConfig,
     Qwen2_5_VLConfig,
+    ShieldGemma2Config,
 )
 from sglang.srt.connector import create_remote_connector
 from sglang.srt.utils import is_remote_url
@@ -52,6 +53,7 @@ _CONFIG_REGISTRY: Dict[str, Type[PretrainedConfig]] = {
     MultiModalityConfig.model_type: MultiModalityConfig,
     Gemma3Config.model_type: Gemma3Config,
     Gemma3TextConfig.model_type: Gemma3TextConfig,
+    ShieldGemma2Config.model_type: ShieldGemma2Config,
 }
 
 for name, cls in _CONFIG_REGISTRY.items():
