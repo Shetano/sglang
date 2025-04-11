@@ -4,7 +4,7 @@ Multi-modality utils
 
 import logging
 from abc import abstractmethod
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
 from torch import nn
@@ -77,7 +77,7 @@ class MultiModalityDataPaddingPatternTokenPairs(MultiModalityDataPaddingPattern)
             return input_ids
 
         for start_idx, end_idx in zip(start_indices, end_indices):
-            padded_ids.extend(input_ids[last_idx : start_idx + 1])
+            padded_ids.extend(input_ids[last_idx: start_idx + 1])
 
             if input_ids[start_idx] in start_token_ids:
                 data_idx += 1
@@ -152,8 +152,8 @@ class MultiModalityDataPaddingPatternMultimodalTokens(MultiModalityDataPaddingPa
             num_pad_values = len(pad_values)
             if num_regions > 0 and num_pad_values > 0:
                 pad_values = (pad_values * (num_regions // num_pad_values + 1))[
-                    :num_regions
-                ]
+                             :num_regions
+                             ]
             else:  # If no regions or no pad_values, this loop won't run anyway.
                 pad_values = []  # Ensure pad_values is empty if starts is empty
 
@@ -233,12 +233,9 @@ def embed_mm_inputs(
     mm_inputs: MultimodalInputs,
     input_ids: torch.Tensor,
     input_embedding: nn.Embedding,
-    image_data_embedding_func: Callable[
-        [List[MultimodalDataItem]], torch.Tensor
-    ] = None,
-    audio_data_embedding_func: Callable[
-        [List[MultimodalDataItem]], torch.Tensor
-    ] = None,
+    data_embedding_mapping: Dict[
+        Modality, Callable[[List[MultimodalDataItem]], torch.Tensor]
+    ],
     placeholder_tokens: dict[Modality, List[int]] = None,
 ) -> Optional[torch.Tensor]:
     """
@@ -298,52 +295,31 @@ def embed_mm_inputs(
 
         embeddings, masks = [], []
 
+        modalities = [Modality.IMAGE, Modality.VIDEO, Modality.AUDIO]
         # 2. Get multimodal embedding separately
-        # TODO: make this more generic
-        # Try get image embedding if any
-        if (
-            any(True for item in appearing_items if item.is_image())
-            and image_data_embedding_func
-        ):
-            items = [item for item in appearing_items if item.is_image()]
-            embedding, mask = get_embedding_and_mask(
-                data_embedding_func=image_data_embedding_func,
-                embedding_items=items,
-                placeholder_tensor=(
-                    # use the specified modality token to identify the location to embed
-                    placeholder_tokens[Modality.IMAGE]
-                    if using_all_items
-                    else torch.tensor(
-                        [item.pad_value for item in items],
-                        device=input_ids.device,
-                    )
-                ),
-                input_ids=input_ids,
-            )
-            embeddings += [embedding]
-            masks += [mask]
+        # Try get embedding if any
+        for modality in modalities:
+            items = [
+                item for item in appearing_items if item.is_modality(modality=modality)
+            ]
 
-        # Try get audio embedding if any
-        if (
-            any(True for item in appearing_items if item.is_audio())
-            and audio_data_embedding_func
-        ):
-            items = [item for item in appearing_items if item.is_audio()]
-            embedding, mask = get_embedding_and_mask(
-                data_embedding_func=audio_data_embedding_func,
-                embedding_items=items,
-                placeholder_tensor=(
-                    placeholder_tokens[Modality.AUDIO]
-                    if using_all_items
-                    else torch.tensor(
-                        [item.pad_value for item in items],
-                        device=input_ids.device,
-                    )
-                ),
-                input_ids=input_ids,
-            )
-            embeddings += [embedding]
-            masks += [mask]
+            if len(items) != 0 and modality in data_embedding_mapping:
+                embedding, mask = get_embedding_and_mask(
+                    data_embedding_func=data_embedding_mapping[modality],
+                    embedding_items=items,
+                    placeholder_tensor=(
+                        # use the specified modality token to identify the location to embed
+                        placeholder_tokens[Modality.IMAGE]
+                        if using_all_items
+                        else torch.tensor(
+                            [item.pad_value for item in items],
+                            device=input_ids.device,
+                        )
+                    ),
+                    input_ids=input_ids,
+                )
+                embeddings += [embedding]
+                masks += [mask]
 
         # 3. Get input embeddings
         vocab_size = input_embedding.num_embeddings
@@ -368,12 +344,9 @@ def general_mm_embed_routine(
     input_ids: torch.Tensor,
     forward_batch: ForwardBatch,
     language_model: nn.Module,
-    image_data_embedding_func: Callable[
-        [List[MultimodalDataItem]], torch.Tensor
-    ] = None,
-    audio_data_embedding_func: Callable[
-        [List[MultimodalDataItem]], torch.Tensor
-    ] = None,
+    data_embedding_mapping: Dict[
+        Modality, Callable[[List[MultimodalDataItem]], torch.Tensor]
+    ],
     placeholder_tokens: dict[Modality, List[int]] = None,
     **kwargs,
 ) -> torch.Tensor:
@@ -401,8 +374,7 @@ def general_mm_embed_routine(
             mm_inputs=mm_input,
             input_ids=input_ids,
             input_embedding=embed_tokens,
-            image_data_embedding_func=image_data_embedding_func,
-            audio_data_embedding_func=audio_data_embedding_func,
+            data_embedding_mapping=data_embedding_mapping,
             placeholder_tokens=placeholder_tokens,
         )
         # once used, mm_inputs is useless, considering chunked-prefill is disabled for multimodal models

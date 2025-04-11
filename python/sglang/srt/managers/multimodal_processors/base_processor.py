@@ -4,7 +4,7 @@ import dataclasses
 import multiprocessing as mp
 import os
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import numpy as np
 import PIL
@@ -13,7 +13,7 @@ from PIL import Image
 from transformers import BaseImageProcessorFast
 
 from sglang.srt.managers.schedule_batch import Modality
-from sglang.srt.utils import encode_video, load_audio, load_image
+from sglang.srt.utils import encode_video, load_audio, load_image, load_video, logger
 
 
 @dataclasses.dataclass
@@ -23,12 +23,13 @@ class BaseMultiModalProcessorOutput:
 
     # frames loaded from image and video, in given order
     images: Optional[list[PIL.Image]] = None
+    videos: Optional[list[VideoReader]] = None
 
     # audios
     audios: Optional[list[np.ndarray]] = None
 
     def normalize(self):
-        for field_name in ["image_sizes", "images", "audios"]:
+        for field_name in ["image_sizes", "images", "videos", "audios"]:
             field = getattr(self, field_name, None)
             if field is not None and isinstance(field, list) and len(field) == 0:
                 setattr(self, field_name, None)
@@ -36,9 +37,21 @@ class BaseMultiModalProcessorOutput:
 
 @dataclasses.dataclass
 class MultimodalSpecialTokens:
-    image_token: Optional[str] = None
-    video_token: Optional[str] = None
-    audio_token: Optional[str] = None
+    image_token: Optional[Union[int, str]] = None
+    video_token: Optional[Union[int, str]] = None
+    audio_token: Optional[Union[int, str]] = None
+
+    def convert_to_str(self, token: Union[str, int], processor) -> str:
+        if token is None:
+            return token
+        if isinstance(token, str):
+            return token
+        return processor.tokenizer.convert_ids_to_tokens([token])[0]
+
+    def convert_to_strs(self, processor):
+        self.image_token = self.convert_to_str(self.image_token, processor)
+        self.video_token = self.convert_to_str(self.video_token, processor)
+        self.audio_token = self.convert_to_str(self.audio_token, processor)
 
     def collect(self) -> list[str]:
         return [
@@ -215,6 +228,7 @@ class BaseMultimodalProcessor(ABC):
         multimodal_tokens: MultimodalSpecialTokens,
         max_req_input_len: int,
         image_data: Optional[list] = None,
+        video_data: Optional[list] = None,
         audio_data: Optional[list] = None,
         return_text: Optional[bool] = True,
         discard_alpha_channel: bool = True,
@@ -228,17 +242,7 @@ class BaseMultimodalProcessor(ABC):
             discard_alpha_channel: if True, discards the alpha channel in the returned images
 
         """
-
-        if image_data is None:
-            image_data = []
-        if isinstance(multimodal_tokens.image_token, int):
-            multimodal_tokens.image_token = (
-                self._processor.tokenizer.convert_ids_to_tokens(
-                    multimodal_tokens.image_token
-                )
-            )
-        else:
-            multimodal_tokens.image_token = multimodal_tokens.image_token
+        multimodal_tokens.convert_to_strs(self._processor)
 
         if isinstance(prompt, list) and return_text:
             assert len(prompt) and isinstance(prompt[0], int)
@@ -266,33 +270,49 @@ class BaseMultimodalProcessor(ABC):
             discard_alpha_channel=discard_alpha_channel,
         )
         # Process results
-        image_sizes, images, audios = [], [], []
+        image_index, video_index, audio_index = 0, 0, 0
+        image_sizes, images, videos, audios = [], [], [], []
         new_text = ""
         task_ptr = 0
 
         for text_part in text_parts:
-            if text_part in multimodal_tokens.collect():
-                task_type, data, frame_limit = task_info[task_ptr]
-                result = futures[task_ptr].result()
-                task_ptr += 1
+            text = text_part
+            try:
+                if text_part in multimodal_tokens.collect():
+                    task_type, data, frame_limit = task_info[task_ptr]
+                    result = futures[task_ptr].result()
+                    task_ptr += 1
 
-                if task_type == Modality.IMAGE:
-                    frames = [result] if not isinstance(result, list) else result
-                    if frames:
-                        image_sizes += frames[0].size * len(frames)
-                        images += frames
-                        new_text += multimodal_tokens.image_token * len(frames)
-                elif task_type == Modality.AUDIO:
-                    # audio
-                    audios.append(result)
-                    new_text += multimodal_tokens.audio_token
-                # TODO: handle video
-            else:
-                new_text += text_part
+                    if task_type == Modality.IMAGE:
+                        frames = [result] if not isinstance(result, list) else result
+                        if frames:
+                            image_sizes += frames[0].size * len(frames)
+                            images += frames
+                            new_text += multimodal_tokens.image_token * len(frames)
+                    elif task_type == Modality.VIDEO:
+                        # load as video
+                        video_file = video_data[video_index]
+                        video = load_video(video_file)
+                        videos += [video]
+                        video_index += 1
+                    elif task_type == Modality.AUDIO:
+                        # audio
+                        audios.append(result)
+                        new_text += multimodal_tokens.audio_token
 
+                new_text += text
+
+            except Exception as e:
+                logger.error(
+                    f"An exception occurred while loading multimodal data: {e}"
+                )
+                raise RuntimeError(
+                    f"An exception occurred while loading multimodal data: {e}"
+                )
         out = BaseMultiModalProcessorOutput(
             images=images,
             audios=audios,
+            videos=videos,
             input_text=new_text,
         )
         out.normalize()
