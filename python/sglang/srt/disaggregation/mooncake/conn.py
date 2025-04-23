@@ -25,10 +25,9 @@ from sglang.srt.disaggregation.base.conn import (
     KVPoll,
 )
 from sglang.srt.disaggregation.mooncake.transfer_engine import MooncakeTransferEngine
-from sglang.srt.disaggregation.utils import DisaggregationMode
+from sglang.srt.disaggregation.utils import DisaggregationMode, check_gdr_support
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.utils import get_free_port, get_ip, get_local_ip_by_remote
-from sglang.srt.disaggregation.utils import check_gdr_support
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +91,7 @@ class TransferInfo:
             dst_aux_index=int(msg[7].decode("ascii")),
         )
 
+
 @dataclasses.dataclass
 class CPUKVArgs:
     kv_data_ptrs: list[int]
@@ -149,13 +149,14 @@ class MooncakeKVManager(BaseKVManager):
         ):
             self.engine.register(aux_data_ptr, aux_data_len)
 
-
     def init_cpu_fallback_buffer(self):
         if self.gdr_support:
             return
 
-        logger.info("GDR is not supported, use CPU memory for bounce buffer."
-                    "The performace may slow down.")
+        logger.info(
+            "GDR is not supported, use CPU memory for bounce buffer."
+            "The performace may slow down."
+        )
 
         kv_cpu_buffer = [
             self.engine.allocate_managed_buffer(self.kv_args.kv_data_lens[i])
@@ -184,7 +185,11 @@ class MooncakeKVManager(BaseKVManager):
 
         num_layers = len(self.kv_args.kv_data_ptrs)
         for layer_id in range(num_layers):
-            src_ptr = self.kv_args.kv_data_ptrs[layer_id] if self.gdr_support else self.cpu_buffer.kv_data_ptrs[layer_id]
+            src_ptr = (
+                self.kv_args.kv_data_ptrs[layer_id]
+                if self.gdr_support
+                else self.cpu_buffer.kv_data_ptrs[layer_id]
+            )
             dst_ptr = dst_kv_ptrs[layer_id]
             item_len = self.kv_args.kv_item_lens[layer_id]
 
@@ -203,9 +208,7 @@ class MooncakeKVManager(BaseKVManager):
         return 0
 
     def fill_cpu_kv_buffer(self, kv_indices: npt.NDArray[np.int64]):
-        kv_blocks, _ = group_concurrent_contiguous(
-            kv_indices, kv_indices
-        )
+        kv_blocks, _ = group_concurrent_contiguous(kv_indices, kv_indices)
         for layer_id in range(len(self.kv_args.kv_data_ptrs)):
             gpu_ptr = self.kv_args.kv_data_ptrs[layer_id]
             cpu_ptr = self.cpu_buffer.kv_data_ptrs[layer_id]
@@ -215,16 +218,11 @@ class MooncakeKVManager(BaseKVManager):
                 cpu_addr = cpu_ptr + int(index[0]) * item_len
                 length = item_len * len(index)
                 self.engine.transfer_sync(
-                    self.get_session_id(),
-                    gpu_addr,
-                    cpu_addr,
-                    length
+                    self.get_session_id(), gpu_addr, cpu_addr, length
                 )
 
     def fill_gpu_kv_buffer(self, kv_indices: npt.NDArray[np.int64]):
-        kv_blocks, _ = group_concurrent_contiguous(
-            kv_indices, kv_indices
-        )
+        kv_blocks, _ = group_concurrent_contiguous(kv_indices, kv_indices)
         for layer_id in range(len(self.kv_args.kv_data_ptrs)):
             gpu_ptr = self.kv_args.kv_data_ptrs[layer_id]
             cpu_ptr = self.cpu_buffer.kv_data_ptrs[layer_id]
@@ -234,10 +232,7 @@ class MooncakeKVManager(BaseKVManager):
                 cpu_addr = cpu_ptr + int(index[0]) * item_len
                 length = item_len * len(index)
                 self.engine.transfer_sync(
-                    self.get_session_id(),
-                    cpu_addr,
-                    gpu_addr,
-                    length
+                    self.get_session_id(), cpu_addr, gpu_addr, length
                 )
 
     def send_aux(

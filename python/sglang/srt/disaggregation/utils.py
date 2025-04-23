@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 from collections import deque
 from enum import Enum
 from typing import List
@@ -7,7 +8,7 @@ from typing import List
 import numpy as np
 import torch
 import torch.distributed as dist
-import ctypes
+
 
 class DisaggregationMode(Enum):
     NULL = "null"
@@ -106,9 +107,10 @@ def kv_to_page_num(num_kv_indices: int, page_size: int):
     # ceil(num_kv_indices / page_size)
     return (num_kv_indices + page_size - 1) // page_size
 
+
 def check_gdr_support():
     lib = ctypes.CDLL("libcuda.so")
-    if not hasattr(lib, 'cuDeviceGetAttribute'):
+    if not hasattr(lib, "cuDeviceGetAttribute"):
         return False
     CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_SUPPORTED = 116
     retval = ctypes.c_int()
@@ -116,7 +118,7 @@ def check_gdr_support():
     result = lib.cuDeviceGetAttribute(
         ctypes.byref(retval),
         CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_SUPPORTED,
-        current_device
+        current_device,
     )
     if result != 0:
         return False
