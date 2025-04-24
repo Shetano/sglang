@@ -129,8 +129,12 @@ class MooncakeKVManager(BaseKVManager):
         self.rank_port = None
         self.server_socket = zmq.Context().socket(zmq.PULL)
         self.gdr_support = check_gdr_support()
-        self.cpu_buffer = None
-        self.init_cpu_fallback_buffer()
+        if not self.gdr_support:
+            logger.info(
+                "GDR is not supported, use CPU memory for bounce buffer."
+                "The performace may slow down."
+            )
+            self.cpu_buffer = self.init_cpu_fallback_buffer()
         self.register_buffer_to_engine()
         if self.disaggregation_mode == DisaggregationMode.PREFILL:
             self.transfer_queue = queue.Queue()
@@ -158,14 +162,6 @@ class MooncakeKVManager(BaseKVManager):
             self.engine.register(aux_data_ptr, aux_data_len)
 
     def init_cpu_fallback_buffer(self):
-        if self.gdr_support:
-            return
-
-        logger.info(
-            "GDR is not supported, use CPU memory for bounce buffer."
-            "The performace may slow down."
-        )
-
         kv_cpu_buffer = [
             self.engine.allocate_managed_buffer(self.kv_args.kv_data_lens[i])
             for i in range(len(self.kv_args.kv_data_ptrs))
