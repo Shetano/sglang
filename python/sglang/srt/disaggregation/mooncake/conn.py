@@ -625,9 +625,14 @@ class MooncakeKVReceiver(BaseKVReceiver):
             f"{self.bootstrap_info['rank_ip']}:{self.bootstrap_info['rank_port']}"
         )
 
-        packed_kv_data_ptrs = b"".join(
-            struct.pack("Q", ptr) for ptr in self.kv_mgr.kv_args.kv_data_ptrs
-        )
+        if self.kv_mgr.gdr_support:
+            packed_kv_data_ptrs = b"".join(
+                struct.pack("Q", ptr) for ptr in self.kv_mgr.kv_args.kv_data_ptrs
+            )
+        else:
+            packed_kv_data_ptrs = b"".join(
+                struct.pack("Q", ptr) for ptr in self.kv_mgr.cpu_buffer.kv_data_ptrs
+            )
         packed_aux_data_ptrs = b"".join(
             struct.pack("Q", ptr) for ptr in self.kv_mgr.kv_args.aux_data_ptrs
         )
