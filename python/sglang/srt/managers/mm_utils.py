@@ -199,7 +199,6 @@ def get_embedding_and_mask(
         placeholder_tensor,
     ).unsqueeze(-1)
 
-    print(f"{placeholder_tensor=}")
     num_mm_tokens_in_input_ids = special_multimodal_mask.sum().item()
     if num_mm_tokens_in_input_ids != num_mm_tokens_in_embedding:
         logger.warning(
