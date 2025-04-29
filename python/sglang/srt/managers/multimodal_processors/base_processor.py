@@ -9,11 +9,12 @@ from typing import List, Optional, Union
 import numpy as np
 import PIL
 import torch
+from decord import VideoReader
 from PIL import Image
 from transformers import BaseImageProcessorFast
 
 from sglang.srt.managers.schedule_batch import Modality
-from sglang.srt.utils import encode_video, load_audio, load_image, load_video, logger
+from sglang.srt.utils import load_audio, load_image, load_video, logger
 
 
 @dataclasses.dataclass
@@ -146,18 +147,18 @@ class BaseMultimodalProcessor(ABC):
 
     @staticmethod
     def _load_single_item(
-        data, is_video, is_audio, frame_count_limit=None, discard_alpha_channel=True
+        data, modality: Modality, frame_count_limit=None, discard_alpha_channel=True
     ):
         """Static method that can be pickled for multiprocessing"""
         try:
-            if is_audio:
-                return load_audio(data)
-            elif is_video:
-                path = data[len("video:") :]
-                return encode_video(path, frame_count_limit)
-            else:
+            if modality == Modality.IMAGE:
                 img, _ = load_image(data)
                 return img.convert("RGB") if discard_alpha_channel else img
+            elif modality == Modality.VIDEO:
+                return load_video(data, frame_count_limit)
+            elif modality == Modality.AUDIO:
+                return load_audio(data)
+
         except Exception as e:
             raise RuntimeError(f"Error while loading data {data}: {e}")
 
@@ -166,6 +167,7 @@ class BaseMultimodalProcessor(ABC):
         text_parts: List[str],
         multimodal_tokens: MultimodalSpecialTokens,
         image_data: Optional[list] = None,
+        video_data: Optional[list] = None,
         audio_data: Optional[list] = None,
         discard_alpha_channel: bool = True,
     ):
@@ -185,34 +187,44 @@ class BaseMultimodalProcessor(ABC):
         # Submit all tasks
         futures = []
         task_info = []
-        image_index, audio_index = 0, 0
+        image_index, video_index, audio_index = 0, 0, 0
 
         for text_part in text_parts:
             if text_part == multimodal_tokens.image_token:
                 data = image_data[image_index]
-                is_video = isinstance(data, str) and data.startswith("video:")
                 estimated_frames = estimated_frames_list[image_index]
                 frame_count_limit = max(1, int(estimated_frames * scaling_factor))
                 futures.append(
                     self.io_executor.submit(
                         BaseMultimodalProcessor._load_single_item,
                         data,
-                        is_video,
-                        False,
+                        Modality.IMAGE,
                         frame_count_limit,
                         discard_alpha_channel,
                     )
                 )
                 task_info.append((Modality.IMAGE, data, frame_count_limit))
                 image_index += 1
+            elif text_part == multimodal_tokens.video_token:
+                data = video_data[video_index]
+                futures.append(
+                    self.io_executor.submit(
+                        BaseMultimodalProcessor._load_single_item,
+                        data,
+                        Modality.VIDEO,
+                        None,
+                        discard_alpha_channel,
+                    )
+                )
+                task_info.append((Modality.VIDEO, data, None))
+                video_index += 1
             elif text_part == multimodal_tokens.audio_token:
                 data = audio_data[audio_index]
                 futures.append(
                     self.io_executor.submit(
                         BaseMultimodalProcessor._load_single_item,
                         data,
-                        False,
-                        True,
+                        Modality.AUDIO,
                         None,
                         discard_alpha_channel,
                     )
@@ -266,41 +278,40 @@ class BaseMultimodalProcessor(ABC):
             text_parts=text_parts,
             multimodal_tokens=multimodal_tokens,
             image_data=image_data,
+            video_data=video_data,
             audio_data=audio_data,
             discard_alpha_channel=discard_alpha_channel,
         )
         # Process results
-        image_index, video_index, audio_index = 0, 0, 0
         image_sizes, images, videos, audios = [], [], [], []
         new_text = ""
         task_ptr = 0
-
+        multimodal_token_list = multimodal_tokens.collect()
         for text_part in text_parts:
-            text = text_part
             try:
-                if text_part in multimodal_tokens.collect():
-                    task_type, data, frame_limit = task_info[task_ptr]
+                if text_part in multimodal_token_list:
+                    modality, data, frame_limit = task_info[task_ptr]
                     result = futures[task_ptr].result()
                     task_ptr += 1
 
-                    if task_type == Modality.IMAGE:
+                    if modality == Modality.IMAGE:
                         frames = [result] if not isinstance(result, list) else result
                         if frames:
+                            # only for minicpmv
                             image_sizes += frames[0].size * len(frames)
                             images += frames
                             new_text += multimodal_tokens.image_token * len(frames)
-                    elif task_type == Modality.VIDEO:
+                    elif modality == Modality.VIDEO:
                         # load as video
-                        video_file = video_data[video_index]
-                        video = load_video(video_file)
-                        videos += [video]
-                        video_index += 1
-                    elif task_type == Modality.AUDIO:
+                        videos += [result]
+                        new_text += text_part
+                    elif modality == Modality.AUDIO:
                         # audio
-                        audios.append(result)
-                        new_text += multimodal_tokens.audio_token
-
-                new_text += text
+                        audios += [result]
+                        new_text += text_part
+                else:
+                    # normal text
+                    new_text += text_part
 
             except Exception as e:
                 logger.error(

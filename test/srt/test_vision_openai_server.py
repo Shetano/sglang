@@ -199,7 +199,7 @@ class TestOpenAIVisionServer(CustomTestCase):
         assert response.usage.completion_tokens > 0
         assert response.usage.total_tokens > 0
 
-    def prepare_video_messages(self, video_path):
+    def prepare_video_images_messages(self, video_path):
         # the memory consumed by the Vision Attention varies a lot, e.g. blocked qkv vs full-sequence sdpa
         # the size of the video embeds differs from the `modality` argument when preprocessed
 
@@ -244,7 +244,7 @@ class TestOpenAIVisionServer(CustomTestCase):
 
         return messages
 
-    def prepare_video_messages_video_direct(self, video_path):
+    def prepare_video_messages(self, video_path):
         messages = [
             {
                 "role": "user",
@@ -275,14 +275,57 @@ class TestOpenAIVisionServer(CustomTestCase):
                 f.write(response.content)
         return file_path
 
-    def test_video_chat_completion(self):
+    def test_video_images_chat_completion(self):
         url = VIDEO_JOBS_URL
         file_path = self.get_or_download_file(url)
 
         client = openai.Client(api_key=self.api_key, base_url=self.base_url)
 
-        messages = self.prepare_video_messages_video_direct(file_path)
-        # messages = self.prepare_video_messages(file_path)
+        messages = self.prepare_video_images_messages(file_path)
+
+        response = client.chat.completions.create(
+            model="default",
+            messages=messages,
+            temperature=0,
+            max_tokens=1024,
+            stream=False,
+        )
+
+        video_response = response.choices[0].message.content
+
+        print("-" * 30)
+        print(f"Video images response:\n{video_response}")
+        print("-" * 30)
+
+        # Add assertions to validate the video response
+        assert (
+            "iPod" in video_response
+            or "device" in video_response
+            or "microphone" in video_response
+        ), video_response
+        assert (
+            "man" in video_response
+            or "person" in video_response
+            or "individual" in video_response
+            or "speaker" in video_response
+        ), video_response
+        assert (
+            "present" in video_response
+            or "examine" in video_response
+            or "display" in video_response
+            or "hold" in video_response
+        )
+        assert "black" in video_response or "dark" in video_response
+        self.assertIsNotNone(video_response)
+        self.assertGreater(len(video_response), 0)
+
+    def _test_video_chat_completion(self):
+        url = VIDEO_JOBS_URL
+        file_path = self.get_or_download_file(url)
+
+        client = openai.Client(api_key=self.api_key, base_url=self.base_url)
+
+        messages = self.prepare_video_messages(file_path)
 
         response = client.chat.completions.create(
             model="default",
@@ -495,6 +538,9 @@ class TestQwen2VLServer(TestOpenAIVisionServer):
         )
         cls.base_url += "/v1"
 
+    def test_video_chat_completion(self):
+        self._test_video_chat_completion()
+
 
 class TestQwen2_5_VLServer(TestOpenAIVisionServer):
     @classmethod
@@ -513,6 +559,9 @@ class TestQwen2_5_VLServer(TestOpenAIVisionServer):
             ],
         )
         cls.base_url += "/v1"
+
+    def test_video_chat_completion(self):
+        self._test_video_chat_completion()
 
 
 class TestVLMContextLengthIssue(CustomTestCase):
@@ -584,7 +633,7 @@ class TestMllamaServer(TestOpenAIVisionServer):
         )
         cls.base_url += "/v1"
 
-    def test_video_chat_completion(self):
+    def test_video_images_chat_completion(self):
         pass
 
 
@@ -663,7 +712,7 @@ class TestDeepseekVL2Server(TestOpenAIVisionServer):
         )
         cls.base_url += "/v1"
 
-    def test_video_chat_completion(self):
+    def test_video_images_chat_completion(self):
         pass
 
 
@@ -687,7 +736,7 @@ class TestDeepseekVL2TinyServer(TestOpenAIVisionServer):
         )
         cls.base_url += "/v1"
 
-    def test_video_chat_completion(self):
+    def test_video_images_chat_completion(self):
         pass
 
 
@@ -709,7 +758,7 @@ class TestJanusProServer(TestOpenAIVisionServer):
         )
         cls.base_url += "/v1"
 
-    def test_video_chat_completion(self):
+    def test_video_images_chat_completion(self):
         pass
 
     def test_single_image_chat_completion(self):
@@ -762,7 +811,7 @@ class TestGemma3itServer(TestOpenAIVisionServer):
         )
         cls.base_url += "/v1"
 
-    def test_video_chat_completion(self):
+    def test_video_images_chat_completion(self):
         pass
 
 
