@@ -633,9 +633,6 @@ class TestMllamaServer(TestOpenAIVisionServer):
         )
         cls.base_url += "/v1"
 
-    def test_video_images_chat_completion(self):
-        pass
-
 
 class TestMinicpmvServer(TestOpenAIVisionServer):
     @classmethod
@@ -712,9 +709,6 @@ class TestDeepseekVL2Server(TestOpenAIVisionServer):
         )
         cls.base_url += "/v1"
 
-    def test_video_images_chat_completion(self):
-        pass
-
 
 class TestDeepseekVL2TinyServer(TestOpenAIVisionServer):
     @classmethod
@@ -736,9 +730,6 @@ class TestDeepseekVL2TinyServer(TestOpenAIVisionServer):
         )
         cls.base_url += "/v1"
 
-    def test_video_images_chat_completion(self):
-        pass
-
 
 class TestJanusProServer(TestOpenAIVisionServer):
     @classmethod
@@ -757,9 +748,6 @@ class TestJanusProServer(TestOpenAIVisionServer):
             ],
         )
         cls.base_url += "/v1"
-
-    def test_video_images_chat_completion(self):
-        pass
 
     def test_single_image_chat_completion(self):
         # Skip this test because it is flaky
@@ -810,9 +798,6 @@ class TestGemma3itServer(TestOpenAIVisionServer):
             ],
         )
         cls.base_url += "/v1"
-
-    def test_video_images_chat_completion(self):
-        pass
 
 
 class TestKimiVLServer(TestOpenAIVisionServer):
