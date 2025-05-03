@@ -254,6 +254,7 @@ class GroupCoordinator:
             PyNcclCommunicator,
         )
 
+        print("GroupCoordinator initializing")
         self.pynccl_comm: Optional[PyNcclCommunicator] = None
         if use_pynccl and self.world_size > 1:
             self.pynccl_comm = PyNcclCommunicator(
@@ -955,6 +956,7 @@ def init_model_parallel_group(
 ) -> GroupCoordinator:
     if use_custom_allreduce is None:
         use_custom_allreduce = _ENABLE_CUSTOM_ALL_REDUCE
+    print(f"init_model_parallel_group")
     return GroupCoordinator(
         group_ranks=group_ranks,
         local_rank=local_rank,
@@ -1106,6 +1108,7 @@ def initialize_model_parallel(
     """
     # Get world size and rank. Ensure some consistencies.
     assert torch.distributed.is_initialized()
+    print(f"is_initialized")
     world_size: int = torch.distributed.get_world_size()
     backend = backend or torch.distributed.get_backend(get_world_group().device_group)
 

@@ -52,7 +52,7 @@ class Gemma3SGLangImageProcessor(SGLangBaseProcessor):
         items = []
         for i, image in enumerate(base_output.images):
             item = MultimodalDataItem(
-                pixel_values=ret["pixel_values"][i],
+                feature=ret["pixel_values"][i],
                 modality=Modality.IMAGE,
             )
             items += [item]
