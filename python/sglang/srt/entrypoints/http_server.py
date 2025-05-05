@@ -28,6 +28,8 @@ import time
 from http import HTTPStatus
 from typing import AsyncIterator, Callable, Dict, Optional
 
+from sglang.srt.parser.parser_manager import ParserManager
+
 # Fix a bug of Python threading
 setattr(threading, "_register_atexit", lambda *args, **kwargs: None)
 
@@ -44,20 +46,18 @@ from fastapi.responses import ORJSONResponse, Response, StreamingResponse
 
 from sglang.srt.disaggregation.utils import FakeBootstrapHost
 from sglang.srt.entrypoints.engine import _launch_subprocesses
-from sglang.srt.function_call_parser import FunctionCallParser
 from sglang.srt.managers.io_struct import (
     CloseSessionReqInput,
     ConfigureLoggingReq,
     EmbeddingReqInput,
     GenerateReqInput,
+    GenerateWithParserReqInput,
     GetWeightsByNameReqInput,
     InitWeightsUpdateGroupReqInput,
     OpenSessionReqInput,
-    ParseFunctionCallReq,
     ProfileReqInput,
     ReleaseMemoryOccupationReqInput,
     ResumeMemoryOccupationReqInput,
-    SeparateReasoningReqInput,
     SetInternalStateReq,
     UpdateWeightFromDiskReqInput,
     UpdateWeightsFromDistributedReqInput,
@@ -79,7 +79,6 @@ from sglang.srt.openai_api.adapter import (
     v1_retrieve_file_content,
 )
 from sglang.srt.openai_api.protocol import ModelCard, ModelList
-from sglang.srt.reasoning_parser import ReasoningParser
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.utils import (
     add_api_key_middleware,
@@ -522,46 +521,127 @@ async def configure_logging(obj: ConfigureLoggingReq, request: Request):
     return Response(status_code=200)
 
 
-@app.post("/parse_function_call")
-async def parse_function_call_request(obj: ParseFunctionCallReq, request: Request):
-    """
-    A native API endpoint to parse function calls from a text.
-    """
-    # 1) Initialize the parser based on the request body
-    parser = FunctionCallParser(tools=obj.tools, tool_call_parser=obj.tool_call_parser)
+@app.api_route("/generate_with_parser", methods=["POST", "PUT"])
+async def generate_with_parser(obj: GenerateWithParserReqInput, request: Request):
+    """A native API endpoint to generate text with function calls and reasoning."""
+    if obj.stream:
+        stream_parser_manager = ParserManager(support_stream=True)
 
-    # 2) Call the non-stream parsing method (non-stream)
-    normal_text, calls = parser.parse_non_stream(obj.text)
+        async def stream_results() -> AsyncIterator[bytes]:
+            stream_buffers = {}
+            try:
+                async for content in _global_state.tokenizer_manager.generate_request(
+                    obj, request
+                ):
+                    index = content.get("index", 0)
+                    finish_reason = content["meta_info"]["finish_reason"]
+                    finish_reason_type = (
+                        finish_reason["type"] if finish_reason else None
+                    )
+                    stream_buffer = stream_buffers.get(index, "")
 
-    # 3) Organize the response content
-    response_data = {
-        "normal_text": normal_text,
-        "calls": [
-            call.model_dump() for call in calls
-        ],  # Convert pydantic objects to dictionaries
-    }
+                    text = content["text"]
+                    delta = text[len(stream_buffer) :]
+                    content["delta_text"] = delta
+                    new_stream_buffer = stream_buffer + delta
+                    stream_buffers[index] = new_stream_buffer
+                    reasoning_text, delta = stream_parser_manager.handle_reasoning(
+                        text=delta,
+                        reasoning_parser=_global_state.tokenizer_manager.server_args.reasoning_parser,
+                        separate_reasoning=True,
+                        stream=True,
+                        index=index,
+                    )
+                    if reasoning_text:
+                        content["delta_reasoning_text"] = reasoning_text
+                        yield b"data: " + orjson.dumps(
+                            content, option=orjson.OPT_NON_STR_KEYS
+                        ) + b"\n\n"
+                    normal_text, calls, finish_reason_type = (
+                        stream_parser_manager.handle_tool_calls(
+                            text=delta,
+                            tools=obj.tools,
+                            tool_call_parser=_global_state.tokenizer_manager.server_args.tool_call_parser,
+                            use_tool_call=True,
+                            stream=True,
+                            index=index,
+                            finish_reason_type=finish_reason_type,
+                        )
+                    )
+                    content["finish_reason_type"] = finish_reason_type
+                    if normal_text:
+                        content["delta_text"] = normal_text
+                        yield b"data: " + orjson.dumps(
+                            content, option=orjson.OPT_NON_STR_KEYS
+                        ) + b"\n\n"
+                    if calls:
+                        for call_item in calls:
+                            # transform call_item -> FunctionResponse + ToolCall
+                            tool_call, finish_reason_type = (
+                                stream_parser_manager.transform_call_item(
+                                    call_item, index, finish_reason_type
+                                )
+                            )
+                            content["delta_tool_calls"] = tool_call.model_dump()
+                            yield b"data: " + orjson.dumps(
+                                content, option=orjson.OPT_NON_STR_KEYS
+                            ) + b"\n\n"
 
-    return ORJSONResponse(content=response_data, status_code=200)
+            except ValueError as e:
+                content = {"error": {"message": str(e)}}
+                logger.error(f"Error: {e}")
+                yield b"data: " + orjson.dumps(
+                    content, option=orjson.OPT_NON_STR_KEYS
+                ) + b"\n\n"
+            yield b"data: [DONE]\n\n"
 
+        return StreamingResponse(
+            stream_results(),
+            media_type="text/event-stream",
+            background=_global_state.tokenizer_manager.create_abort_task(obj),
+        )
+    else:
+        parser_manager = ParserManager(support_stream=False)
+        try:
+            ret = await _global_state.tokenizer_manager.generate_request(
+                obj, request
+            ).__anext__()
 
-@app.post("/separate_reasoning")
-async def separate_reasoning_request(obj: SeparateReasoningReqInput, request: Request):
-    """
-    A native API endpoint to separate reasoning from a text.
-    """
-    # 1) Initialize the parser based on the request body
-    parser = ReasoningParser(model_type=obj.reasoning_parser)
-
-    # 2) Call the non-stream parsing method (non-stream)
-    reasoning_text, normal_text = parser.parse_non_stream(obj.text)
-
-    # 3) Organize the response content
-    response_data = {
-        "reasoning_text": reasoning_text,
-        "text": normal_text,
-    }
-
-    return ORJSONResponse(content=response_data, status_code=200)
+            tool_calls = None
+            is_list = isinstance(ret, list)
+            if not is_list:
+                ret = [ret]
+            for ret_item in ret:
+                text = ret_item["text"]
+                finish_reason = ret_item["meta_info"]["finish_reason"]
+                finish_reason_type = finish_reason["type"] if finish_reason else None
+                reasoning_text, text = parser_manager.handle_reasoning(
+                    text=text,
+                    reasoning_parser=_global_state.tokenizer_manager.server_args.reasoning_parser,
+                    separate_reasoning=obj.reasoning_parser is not None,
+                    stream=False,
+                )
+                text, tool_calls, finish_reason_type = parser_manager.handle_tool_calls(
+                    text=text,
+                    tools=obj.tools,
+                    tool_call_parser=_global_state.tokenizer_manager.server_args.tool_call_parser,
+                    use_tool_call=obj.tool_call_parser is not None,
+                    stream=False,
+                    finish_reason_type=finish_reason_type,
+                )
+                ret_item["finish_reason_type"] = finish_reason_type
+                ret_item["text"] = text
+                if reasoning_text:
+                    ret_item["reasoning_text"] = reasoning_text
+                if tool_calls:
+                    ret_item["calls"] = [call.model_dump() for call in tool_calls]
+            if not is_list:
+                ret = ret[0]
+            return ret
+        except ValueError as e:
+            logger.error(f"Error: {e}")
+            return _create_error_response(e)
+    return ORJSONResponse({"predictions": ret})
 
 
 ##### OpenAI-compatible API endpoints #####
