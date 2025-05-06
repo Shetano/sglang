@@ -191,7 +191,7 @@ class TestMiniCPMVLogits(VisionLLMLogitsBase):
             model_inputs = {
                 "input_ids": inputs.input_ids,
                 "image_bound": inputs.image_bound,
-                "pixel_values": inputs.pixel_values,
+                "pixel_values": inputs.feature,
                 "tgt_sizes": inputs.tgt_sizes,
             }
             (hf_output, _) = self.hf_model.get_vllm_embedding(
@@ -221,7 +221,7 @@ class TestMiniCPMVLogits(VisionLLMLogitsBase):
                 mm_inputs=MultimodalInputs(
                     mm_items=[
                         MultimodalDataItem(
-                            pixel_values=pixel_values_flat,
+                            feature=pixel_values_flat,
                             tgt_size=tgt_sizes_flat,
                             modality=Modality.IMAGE,
                             pad_value=self.processor.tokenizer.unk_token_id,

@@ -13,7 +13,6 @@
 # ==============================================================================
 """ModelRunner runs the forward passes of the models."""
 
-import collections
 import datetime
 import gc
 import inspect
@@ -100,6 +99,18 @@ SGLANG_CI_SMALL_KV_SIZE = os.getenv("SGLANG_CI_SMALL_KV_SIZE", None)
 UNBALANCED_MODEL_LOADING_TIMEOUT_S = 300
 
 logger = logging.getLogger(__name__)
+
+
+def get_backend(device: str) -> str:
+    if device == "cuda":
+        return "nccl"
+    elif device == "xpu":
+        return "xccl"
+    elif device == "hpu":
+        return "hccl"
+    elif device == "cpu":
+        return "gloo"
+    raise Exception()
 
 
 class ModelRunner:
@@ -353,14 +364,7 @@ class ModelRunner:
             )
             raise
 
-        if self.device == "cuda":
-            backend = "nccl"
-        elif self.device == "xpu":
-            backend = "xccl"
-        elif self.device == "hpu":
-            backend = "hccl"
-        elif self.device == "cpu":
-            backend = "gloo"
+        backend = get_backend(self.device)
 
         before_avail_memory = get_available_gpu_memory(self.device, self.gpu_id)
         if not self.server_args.enable_p2p_check:

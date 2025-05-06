@@ -61,7 +61,7 @@ class KimiVLImageProcessor(SGLangBaseProcessor):
             "input_ids": ret["input_ids"].flatten().tolist(),
             "mm_items": [
                 MultimodalDataItem(
-                    pixel_values=ret["pixel_values"],
+                    feature=ret["pixel_values"],
                     image_grid_thws=ret["image_grid_hws"],
                     modality=Modality.IMAGE,
                 )

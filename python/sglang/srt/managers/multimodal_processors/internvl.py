@@ -210,7 +210,7 @@ class InternVLImageProcessor(BaseMultimodalProcessor):
                 return None
 
         pixel_values = torch.cat(pixel_values, dim=0)
-        items = [MultimodalDataItem(pixel_values=pixel_values, modality=Modality.IMAGE)]
+        items = [MultimodalDataItem(feature=pixel_values, modality=Modality.IMAGE)]
 
         for idx, num_patches in enumerate(num_patches_list):
             image_tokens = (
