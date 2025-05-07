@@ -1494,12 +1494,17 @@ class DeepseekV2ForCausalLM(nn.Module):
                 assert (
                     self.n_share_experts_fusion == self.tp_size
                 ), f"Shared experts fusion optimization is enabled in DeepSeek V3/R1, set it to {self.tp_size} can get best optimized performace."
+        # FIXME(PZ): make n_share_experts_fusion compatible with compressed tensor
         elif self.n_share_experts_fusion == 0:
             if (
                 torch.cuda.get_device_capability("cuda") >= (9, 0)
                 and self.config.architectures[0] == architecture
                 and self.config.n_routed_experts == 256
                 and (not global_server_args_dict["enable_deepep_moe"])
+                and (
+                    self.quant_config.get_name()
+                    not in ["compressed_tensors", "compressed-tensors"]
+                )
             ):
                 self.n_share_experts_fusion = self.tp_size
                 global_server_args_dict["n_share_experts_fusion"] = self.tp_size
@@ -1556,6 +1561,9 @@ class DeepseekV2ForCausalLM(nn.Module):
                         0,
                         0,
                     ).T
+            # FIXME: adapt to CompressedTensorsWNA16
+            # elif hasattr(self_attn.kv_b_proj, "weight_packed"):
+            #     w = self_attn.kv_b_proj.weight_packed
             else:
                 w = self_attn.kv_b_proj.weight
             # NOTE(HandH1998): Since `bmm_fp8` only supports per-tensor scale, we have to requantize `self_attn.kv_b_proj`.
