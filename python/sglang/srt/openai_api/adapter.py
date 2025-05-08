@@ -27,6 +27,7 @@ from fastapi import HTTPException, Request, UploadFile
 from fastapi.responses import ORJSONResponse, StreamingResponse
 from pydantic import ValidationError
 
+from sglang.serving_score import ServingScores
 from sglang.srt.code_completion_parser import (
     generate_completion_prompt_from_request,
     is_completion_template_defined,
@@ -69,6 +70,8 @@ from sglang.srt.openai_api.protocol import (
     FunctionResponse,
     LogProbs,
     MultimodalEmbeddingInput,
+    RerankRequest,
+    ScoreRequest,
     ToolCall,
     TopLogprob,
     UsageInfo,
@@ -1849,6 +1852,40 @@ async def v1_embeddings(tokenizer_manager, raw_request: Request):
     response = v1_embedding_response(ret, tokenizer_manager.model_path)
 
     return response
+
+
+async def v1_scores(tokenizer_manager, raw_request: Request):
+    try:
+        request_json = await raw_request.json()
+    except Exception as e:
+        return create_error_response("Invalid request body, error: ", str(e))
+
+    score_request = ScoreRequest(**request_json)
+    handler = ServingScores(tokenizer_manager)
+
+    try:
+        ret = await handler._run_scoring(score_request, raw_request)
+    except ValueError as e:
+        return create_error_response(str(e))
+
+    return ret
+
+
+async def v1_rerank(tokenizer_manager, raw_request: Request):
+    try:
+        request_json = await raw_request.json()
+    except Exception as e:
+        return create_error_response("Invalid request body, error: ", str(e))
+
+    rerank_request = RerankRequest(**request_json)
+    handler = ServingScores(tokenizer_manager)
+
+    try:
+        ret = await handler.do_rerank(rerank_request, raw_request)
+    except ValueError as e:
+        return create_error_response(str(e))
+
+    return ret
 
 
 def to_openai_style_logprobs(
