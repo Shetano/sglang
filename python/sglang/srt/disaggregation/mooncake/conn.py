@@ -207,9 +207,11 @@ class MooncakeKVManager(BaseKVManager):
         num_layers = len(self.kv_args.kv_data_ptrs)
         layers_params = [
             (
-                self.kv_args.kv_data_ptrs[layer_id]
-                if self.gdr_support
-                else self.cpu_buffer.kv_data_ptrs[layer_id],
+                (
+                    self.kv_args.kv_data_ptrs[layer_id]
+                    if self.gdr_support
+                    else self.cpu_buffer.kv_data_ptrs[layer_id]
+                ),
                 dst_kv_ptrs[layer_id],
                 self.kv_args.kv_item_lens[layer_id],
             )
