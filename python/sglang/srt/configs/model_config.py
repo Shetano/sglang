@@ -55,6 +55,7 @@ class ModelConfig:
         self.model_path = model_path
         self.revision = revision
         self.quantization = quantization
+        self.modelopt_quant = modelopt_quant
 
         # Parse args
         self.maybe_pull_model_tokenizer_from_remote()
