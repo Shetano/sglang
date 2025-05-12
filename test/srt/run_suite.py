@@ -94,6 +94,7 @@ suites = {
         TestFile("test_patch_torch.py", 19),
         TestFile("test_update_weights_from_distributed.py", 103),
         TestFile("test_verl_engine.py", 64),
+        TestFile("test_disaggregation.py", 90),
     ],
     "per-commit-8-gpu": [
         # Disabled deepep tests temporarily because it takes too much time.
