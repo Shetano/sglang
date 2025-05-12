@@ -142,7 +142,7 @@ class MooncakeKVManager(BaseKVManager):
         if not self.gdr_support:
             logger.info(
                 "GDR is not supported, use CPU memory for bounce buffer."
-                "The performace may slow down."
+                "The performance may slow down."
             )
             self.cpu_buffer = self.init_cpu_fallback_buffer()
         self.register_buffer_to_engine()
