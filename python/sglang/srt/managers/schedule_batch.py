@@ -75,6 +75,7 @@ global_server_args_dict = {
     "enable_deepep_moe": ServerArgs.enable_deepep_moe,
     "enable_dp_attention": ServerArgs.enable_dp_attention,
     "enable_dp_lm_head": ServerArgs.enable_dp_lm_head,
+    "enable_dp_mla": ServerArgs.enable_dp_mla,
     "enable_ep_moe": ServerArgs.enable_ep_moe,
     "enable_nan_detection": ServerArgs.enable_nan_detection,
     "flashinfer_mla_disable_ragged": ServerArgs.flashinfer_mla_disable_ragged,
