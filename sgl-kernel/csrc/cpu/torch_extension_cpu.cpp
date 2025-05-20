@@ -186,6 +186,9 @@ at::Tensor shm_allgather(at::Tensor& data, c10::intrusive_ptr<c10d::ProcessGroup
 std::tuple<at::Tensor, at::Tensor>
 rotary_position_embedding_cpu(at::Tensor& t_pos, at::Tensor& q_pe, at::Tensor& k_pe, at::Tensor& t_emb_pos);
 
+// CPU and memory binding
+std::string init_cpu_threads_env(const std::string& cpu_ids);
+
 TORCH_LIBRARY_FRAGMENT(sgl_kernel, m) {
   // activation
   m.def("silu_and_mul_cpu(Tensor input) -> Tensor");
@@ -293,6 +296,10 @@ TORCH_LIBRARY_FRAGMENT(sgl_kernel, m) {
   // rope
   m.def("rotary_position_embedding_cpu(Tensor t_pos, Tensor q_pe, Tensor k_pe, Tensor t_emb_pos) -> (Tensor, Tensor)");
   m.impl("rotary_position_embedding_cpu", torch::kCPU, &rotary_position_embedding_cpu);
+
+  // CPU and memory binding
+  m.def("init_cpu_threads_env(str cpu_ids) -> str");
+  m.impl("init_cpu_threads_env", torch::kCPU, &init_cpu_threads_env);  
 }
 
 REGISTER_EXTENSION(common_ops)
