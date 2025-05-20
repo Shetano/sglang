@@ -1089,6 +1089,7 @@ class ModelRunner:
                 IntelAMXAttnBackend,
             )
 
+            logger.info(f"Intel AMX attention backend is enabled.")
             return IntelAMXAttnBackend(self)
         else:
             raise ValueError(
