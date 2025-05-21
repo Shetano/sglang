@@ -4,9 +4,7 @@ from typing import Dict, List, Union
 from sglang.srt.managers.multimodal_processor import (
     BaseMultimodalProcessor as SGLangBaseProcessor,
 )
-from sglang.srt.managers.multimodal_processors.base_processor import (
-    MultimodalSpecialTokens,
-)
+from sglang.srt.managers.multimodal_processor import MultimodalSpecialTokens
 from sglang.srt.managers.schedule_batch import Modality, MultimodalDataItem
 from sglang.srt.models.gemma3_mm import Gemma3ForConditionalGeneration
 
