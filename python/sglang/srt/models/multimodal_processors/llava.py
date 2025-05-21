@@ -1,5 +1,4 @@
 import asyncio
-import importlib
 from typing import List, Optional, Union
 
 import numpy as np
@@ -8,10 +7,6 @@ from transformers.models.auto.processing_auto import (
 )
 
 import sglang.srt.managers.multimodal_processor as sgl_mm_processor_utils
-from sglang.srt.managers.multimodal_processor import (
-    BaseMultimodalProcessor as SGLangBaseProcessor,
-)
-from sglang.srt.managers.multimodal_processor import MultimodalSpecialTokens
 from sglang.srt.managers.schedule_batch import Modality, MultimodalDataItem
 from sglang.srt.mm_utils import expand2square, process_anyres_image
 from sglang.srt.models.llava import (
@@ -22,6 +17,9 @@ from sglang.srt.models.llava import (
 )
 from sglang.srt.models.llavavid import LlavaVidForCausalLM
 from sglang.srt.models.mistral import Mistral3ForConditionalGeneration
+from sglang.srt.models.multimodal_processors.base_processor import (
+    BaseMultimodalProcessor as SGLangBaseProcessor,
+)
 from sglang.srt.utils import load_image, logger
 from sglang.utils import get_exception_traceback
 

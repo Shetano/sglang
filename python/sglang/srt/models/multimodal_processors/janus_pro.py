@@ -1,11 +1,13 @@
 from typing import List, Union
 
-from sglang.srt.managers.multimodal_processor import (
-    BaseMultimodalProcessor as SGLangBaseProcessor,
-)
-from sglang.srt.managers.multimodal_processor import MultimodalSpecialTokens
 from sglang.srt.managers.schedule_batch import Modality, MultimodalDataItem
 from sglang.srt.models.deepseek_janus_pro import MultiModalityCausalLM
+from sglang.srt.models.multimodal_processors.base_processor import (
+    BaseMultimodalProcessor as SGLangBaseProcessor,
+)
+from sglang.srt.models.multimodal_processors.base_processor import (
+    MultimodalSpecialTokens,
+)
 
 
 class JanusProImageProcessor(SGLangBaseProcessor):
