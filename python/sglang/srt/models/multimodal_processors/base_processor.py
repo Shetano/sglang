@@ -355,3 +355,11 @@ class BaseMultimodalProcessor(ABC):
                 "Unsupported: mixture of multimodal inputs where some but not all are preprocessed."
             )
         return ret
+
+
+class DummyMultimodalProcessor(BaseMultimodalProcessor):
+    def __init__(self):
+        pass
+
+    async def process_mm_data_async(self, *args, **kwargs):
+        return None
