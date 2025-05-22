@@ -66,7 +66,6 @@ sources = [
     "csrc/cpu/moe_fp8.cpp",
     "csrc/cpu/moe_int8.cpp",
     "csrc/cpu/norm.cpp",
-    "csrc/cpu/numa_utils.cpp",
     "csrc/cpu/qkv_proj.cpp",
     "csrc/cpu/topk.cpp",
     "csrc/cpu/interface.cpp",
@@ -86,7 +85,7 @@ extra_compile_args = {
 if cpu_fp8_ftz:
     extra_compile_args["cxx"].append("-DSGLANG_CPU_FP8_CVT_FTZ")
 
-libraries = ["c10", "torch", "torch_python", "numa"]
+libraries = ["c10", "torch", "torch_python"]
 cmdclass = {
     "build_ext": BuildExtension.with_options(use_ninja=True),
 }
@@ -94,7 +93,6 @@ Extension = CppExtension
 
 extra_link_args = ["-Wl,-rpath,$ORIGIN/../../torch/lib", f"-L/usr/lib/{arch}-linux-gnu"]
 
-conda_prefix = os.getenv("CONDA_PREFIX", "")
 ext_modules = [
     Extension(
         name="sgl_kernel.common_ops",
@@ -102,7 +100,6 @@ ext_modules = [
         include_dirs=include_dirs,
         extra_compile_args=extra_compile_args,
         libraries=libraries,
-        library_dirs=[os.path.join(conda_prefix, "lib")] if conda_prefix else [],
         extra_link_args=extra_link_args,
         py_limited_api=False,
     ),
