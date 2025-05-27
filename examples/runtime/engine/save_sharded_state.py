@@ -6,7 +6,7 @@ read its own shard rather than the entire checkpoint.
 
 Example usage:
 
-python save_sharded_state.py \
+python /mnt/raid0/haoyanli/lhy_sglang/sglang/examples/runtime/engine/save_sharded_state.py \
     --model-path /path/to/load \
     --quantization deepspeedfp \
     --tensor-parallel-size 8 \
