@@ -763,32 +763,41 @@ class ModelRunner:
             distributed=get_world_group().world_size > 1,
             cpu_group=get_world_group().cpu_group,
         )
-        if self.use_mla_backend:
-            num_layers = (
-                self.model_config.num_hidden_layers
-                if not self.is_draft_worker
-                else self.model_config.hf_config.num_nextn_predict_layers
-            )
-            # FIXME: pipeline parallelism is not compatible with mla backend
-            assert self.pp_size == 1
+        if self.server_args.disable_cache:
             cell_size = (
-                (self.model_config.kv_lora_rank + self.model_config.qk_rope_head_dim)
-                * num_layers
-                * torch._utils._element_size(self.kv_cache_dtype)
-            )
+                    self.model_config.get_num_kv_heads(get_attention_tp_size())
+                    * self.model_config.head_dim
+                    * 2
+                    * torch._utils._element_size(self.kv_cache_dtype)
+                )
         else:
-            cell_size = (
-                self.model_config.get_num_kv_heads(get_attention_tp_size())
-                * self.model_config.head_dim
-                * self.num_effective_layers
-                * 2
-                * torch._utils._element_size(self.kv_cache_dtype)
-            )
+            if self.use_mla_backend:
+                num_layers = (
+                    self.model_config.num_hidden_layers
+                    if not self.is_draft_worker
+                    else self.model_config.hf_config.num_nextn_predict_layers
+                )
+                # FIXME: pipeline parallelism is not compatible with mla backend
+                assert self.pp_size == 1
+                cell_size = (
+                    (self.model_config.kv_lora_rank + self.model_config.qk_rope_head_dim)
+                    * num_layers
+                    * torch._utils._element_size(self.kv_cache_dtype)
+                )
+            else:
+                cell_size = (
+                    self.model_config.get_num_kv_heads(get_attention_tp_size())
+                    * self.model_config.head_dim
+                    * self.num_effective_layers
+                    * 2
+                    * torch._utils._element_size(self.kv_cache_dtype)
+                )
+        
         rest_memory = available_gpu_memory - total_gpu_memory * (
             1 - self.mem_fraction_static
         )
         max_num_token = int(rest_memory * (1 << 30) // cell_size)
-        return max_num_token
+        return max_num_token 
 
     def init_memory_pool(
         self,
@@ -924,6 +933,8 @@ class ModelRunner:
                 enable_memory_saver=self.server_args.enable_memory_saver,
                 start_layer=self.start_layer,
                 end_layer=self.end_layer,
+                default_cache= (not self.server_args.disable_cache)
+
             )
 
         if self.token_to_kv_pool_allocator is None:

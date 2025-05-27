@@ -249,6 +249,7 @@ class MHATokenToKVPool(KVCache):
         enable_memory_saver: bool,
         start_layer: Optional[int] = None,
         end_layer: Optional[int] = None,
+        default_cache: Optional[bool] = True,
     ):
         super().__init__(
             size,
@@ -260,7 +261,7 @@ class MHATokenToKVPool(KVCache):
             start_layer,
             end_layer,
         )
-
+        self.default_cache = default_cache
         self.head_num = head_num
         self.head_dim = head_dim
         self._create_buffers()
@@ -279,22 +280,39 @@ class MHATokenToKVPool(KVCache):
         with self.memory_saver_adapter.region():
             # [size, head_num, head_dim] for each layer
             # The padded slot 0 is used for writing dummy outputs from padded tokens.
-            self.k_buffer = [
+            if self.default_cache:
+                self.k_buffer = [
+                    torch.zeros(
+                        (self.size + self.page_size, self.head_num, self.head_dim),
+                        dtype=self.store_dtype,
+                        device=self.device,
+                    )
+                    for _ in range(self.layer_num)
+                ]
+                self.v_buffer = [
+                    torch.zeros(
+                        (self.size + self.page_size, self.head_num, self.head_dim),
+                        dtype=self.store_dtype,
+                        device=self.device,
+                    )
+                    for _ in range(self.layer_num)
+                ]
+            else:
+                self.k_buffer = [
                 torch.zeros(
-                    (self.size + self.page_size, self.head_num, self.head_dim),
-                    dtype=self.store_dtype,
-                    device=self.device,
-                )
-                for _ in range(self.layer_num)
-            ]
-            self.v_buffer = [
-                torch.zeros(
-                    (self.size + self.page_size, self.head_num, self.head_dim),
-                    dtype=self.store_dtype,
-                    device=self.device,
-                )
-                for _ in range(self.layer_num)
-            ]
+                        (self.size + self.page_size, self.head_num, self.head_dim),
+                        dtype=self.store_dtype,
+                        device=self.device,
+                    )
+                ]
+                self.v_buffer = [
+                    torch.zeros(
+                        (self.size + self.page_size, self.head_num, self.head_dim),
+                        dtype=self.store_dtype,
+                        device=self.device,
+                    )
+                ]
+
 
     def _clear_buffers(self):
         del self.k_buffer
@@ -374,6 +392,8 @@ class MHATokenToKVPool(KVCache):
         return self.v_buffer[layer_id - self.start_layer]
 
     def get_kv_buffer(self, layer_id: int):
+        if not self.default_cache:
+            layer_id = 0
         return self.get_key_buffer(layer_id), self.get_value_buffer(layer_id)
 
     def set_kv_buffer(
@@ -386,29 +406,30 @@ class MHATokenToKVPool(KVCache):
         v_scale: Optional[float] = None,
     ):
         layer_id = layer.layer_id
-        if cache_k.dtype != self.dtype:
-            if k_scale is not None:
-                cache_k.div_(k_scale)
-            if v_scale is not None:
-                cache_v.div_(v_scale)
-            cache_k = cache_k.to(self.dtype)
-            cache_v = cache_v.to(self.dtype)
+        if layer_id == 0 or self.default_cache:
+            if cache_k.dtype != self.dtype:
+                if k_scale is not None:
+                    cache_k.div_(k_scale)
+                if v_scale is not None:
+                    cache_v.div_(v_scale)
+                cache_k = cache_k.to(self.dtype)
+                cache_v = cache_v.to(self.dtype)
 
-        if self.store_dtype != self.dtype:
-            cache_k = cache_k.view(self.store_dtype)
-            cache_v = cache_v.view(self.store_dtype)
+            if self.store_dtype != self.dtype:
+                cache_k = cache_k.view(self.store_dtype)
+                cache_v = cache_v.view(self.store_dtype)
 
-        if self.capture_mode and self.alt_stream is not None:
-            # Overlap the copy of K and V cache for small batch size
-            current_stream = self.device_module.current_stream()
-            self.alt_stream.wait_stream(current_stream)
-            self.k_buffer[layer_id - self.start_layer][loc] = cache_k
-            with self.device_module.stream(self.alt_stream):
+            if self.capture_mode and self.alt_stream is not None:
+                # Overlap the copy of K and V cache for small batch size
+                current_stream = self.device_module.current_stream()
+                self.alt_stream.wait_stream(current_stream)
+                self.k_buffer[layer_id - self.start_layer][loc] = cache_k
+                with self.device_module.stream(self.alt_stream):
+                    self.v_buffer[layer_id - self.start_layer][loc] = cache_v
+                current_stream.wait_stream(self.alt_stream)
+            else:
+                self.k_buffer[layer_id - self.start_layer][loc] = cache_k
                 self.v_buffer[layer_id - self.start_layer][loc] = cache_v
-            current_stream.wait_stream(self.alt_stream)
-        else:
-            self.k_buffer[layer_id - self.start_layer][loc] = cache_k
-            self.v_buffer[layer_id - self.start_layer][loc] = cache_v
 
 
 @torch.compile

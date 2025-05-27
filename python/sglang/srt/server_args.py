@@ -60,6 +60,7 @@ class ServerArgs:
     is_embedding: bool = False
     enable_multimodal: Optional[bool] = None
     revision: Optional[str] = None
+    disable_cache: bool = False
 
     # Port for the HTTP server
     host: str = "127.0.0.1"
@@ -464,6 +465,8 @@ class ServerArgs:
 
     @staticmethod
     def add_cli_args(parser: argparse.ArgumentParser):
+        
+        
         # Model and port args
         parser.add_argument(
             "--model-path",
@@ -634,6 +637,11 @@ class ServerArgs:
             help="The specific model version to use. It can be a branch "
             "name, a tag name, or a commit id. If unspecified, will use "
             "the default version.",
+        )
+        parser.add_argument(
+            "--disable-cache",
+            action="store_true",
+            help="Disable cache usage.",
         )
 
         # Memory and scheduling
