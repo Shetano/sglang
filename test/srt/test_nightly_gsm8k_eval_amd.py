@@ -37,7 +37,6 @@ MODEL_SCORE_THRESHOLDS = {
 
 # Models currently failing on AMD MI300x.
 failing_models = {
-    "neuralmagic/DeepSeek-Coder-V2-Lite-Instruct-FP8",
     "neuralmagic/gemma-2-2b-it-FP8",
 }
 
