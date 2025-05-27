@@ -155,7 +155,7 @@ class Qwen2_5VLImageProcessor(SGLangBaseProcessor):
             images=None if images_are_preprocessed else base_output.images,
             audio=base_output.audios,
         )
-        input_ids = ret["input_ids"].flatten().tolist()
+        input_ids = ret["input_ids"].flatten()
         image_offsets = self.get_mm_items_offset(
             input_ids=input_ids, mm_token_id=self.image_token_id
         )
@@ -230,7 +230,7 @@ class Qwen2_5VLImageProcessor(SGLangBaseProcessor):
                 tokens_per_second=getattr(
                     self.hf_config.vision_config, "tokens_per_second", None
                 ),
-                input_ids=torch.tensor(input_ids).unsqueeze(0),
+                input_ids=input_ids.unsqueeze(0),
                 image_grid_thw=image_grid_thw,
                 video_grid_thw=video_grid_thw,
                 second_per_grid_ts=ret.get("second_per_grid_ts", None),
