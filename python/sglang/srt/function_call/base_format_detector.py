@@ -182,10 +182,16 @@ class BaseFormatDetector(ABC):
                         sent = len(self.streamed_args_for_tool[self.current_tool_id])
                         argument_diff = cur_args_json[sent:]
 
+                        function_name = current_tool_call.get("name")
+                        true_index = self._tool_indices.get(function_name, -1)
+                        if true_index == -1:
+                            logger.warning("Unknown tool name %s", function_name)
+                            return StreamingParseResult()
+
                         res = StreamingParseResult(
                             calls=[
                                 ToolCallItem(
-                                    tool_index=self.current_tool_id,
+                                    tool_index=true_index,
                                     name="",
                                     parameters=argument_diff,
                                 )
@@ -248,10 +254,16 @@ class BaseFormatDetector(ABC):
                             argument_diff = prefix[sent:]
 
                     if argument_diff is not None:
+                        function_name = current_tool_call.get("name")
+                        true_index = self._tool_indices.get(function_name, -1)
+                        if true_index == -1:
+                            logger.warning("Unknown tool name %s", function_name)
+                            return StreamingParseResult()
+
                         res = StreamingParseResult(
                             calls=[
                                 ToolCallItem(
-                                    tool_index=self.current_tool_id,
+                                    tool_index=true_index,
                                     parameters=argument_diff,
                                 )
                             ],
