@@ -7,12 +7,14 @@ the cuda graph will be recaptured, which might lead to a performance hit.
 So avoid getting hidden states and completions alternately.
 """
 
+import asyncio
+
 import torch
 
 import sglang as sgl
 
 
-def main():
+async def main():
     prompts = [
         "Hello, my name is",
         "The president of the United States is",
@@ -30,7 +32,7 @@ def main():
         "max_new_tokens": 10,
     }
 
-    outputs = llm.generate(
+    outputs = await llm.async_generate(
         prompts, sampling_params=sampling_params, return_hidden_states=True
     )
 
@@ -62,4 +64,4 @@ def main():
 # The __main__ condition is necessary here because we use "spawn" to create subprocesses
 # Spawn starts a fresh program every time, if there is no __main__, it will run into infinite loop to keep spawning processes from sgl.Engine
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
